@@ -1,0 +1,248 @@
+
+
+
+replace this in dependencies.py 
+# from fastapi.security import HTTPBearer
+# from fastapi import Request, status, Depends
+# from utils.utils import decode_token
+# from fastapi.exceptions import HTTPException
+# from database.redis import token_in_blocklist
+# from typing import Callable, Iterable, Optional, Any, Dict
+
+# class TokenBearer(HTTPBearer):
+#     def __init__(self, auto_error=True):
+#         super().__init__(auto_error=auto_error)
+
+#     async def __call__(self, request: Request) -> Dict[str, Any] | None:
+#         creds = await super().__call__(request)
+#         token = creds.credentials if creds else None
+#         if not token:
+#             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing auth token")
+
+    
+#         token_data = decode_token(token)
+#         if token_data is None:
+#             raise HTTPException(
+#                 status_code=status.HTTP_403_FORBIDDEN,
+#                 detail={
+#                     "error": "This token is invalid or has been revoked",
+#                     "resolution": "Please get a new token"
+#                 }
+#             )
+#         jti = token_data.get("jti")
+#         if jti and await token_in_blocklist(jti):
+#             raise HTTPException(
+#                 status_code=status.HTTP_403_FORBIDDEN,
+#                 detail={
+#                     "error": "This token is invalid or has been revoked",
+#                     "resolution": "Please get a new token"
+#                 }
+#             )
+
+        
+#         self.verify_token_data(token_data)
+#         return token_data
+
+#     def token_valid(self, token: str) -> bool:
+#         token_data = decode_token(token)
+#         return token_data is not None
+
+#     def verify_token_data(self, token_data):
+#         raise NotImplementedError("Please Override this method in child class")
+
+
+# class AccessTokenBearer(TokenBearer):
+#     def verify_token_data(self, token_data: dict) -> None:
+#         if token_data and token_data.get("refresh"):
+#             raise HTTPException(
+#                 status_code=status.HTTP_403_FORBIDDEN,
+#                 detail="Please provide an access token"
+#             )
+
+# class RefreshTokenBearer(TokenBearer):
+#     def verify_token_data(self, token_data: dict) -> None:
+#         if token_data and not token_data.get("refresh"):
+#             raise HTTPException(
+#                 status_code=status.HTTP_403_FORBIDDEN,
+#                 detail="Please provide a refresh token"
+#             )
+
+# async def get_current_user(
+#     token_details: dict = Depends(AccessTokenBearer()),
+# ):
+  
+#     user_payload = token_details.get("user", {}) if token_details else {}
+#     return user_payload
+
+# def require_global_roles(role_names: Optional[Iterable[str]] = None, role_ids: Optional[Iterable[int]] = None) -> Callable:
+#     role_names_set = set(n.lower() for n in (role_names or []))
+#     role_ids_set = set(role_ids or [])
+
+#     async def dependency(user: Dict[str, Any] = Depends(get_current_user)):
+#         if not role_names_set and not role_ids_set:
+#             return user
+#         user_role: Optional[Dict[str, Any]] = user.get("global_role")
+#         if user_role is None:
+#             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient role")
+#         if role_ids_set and user_role.get("role_id") in role_ids_set:
+#             return user
+#         if role_names_set and user_role.get("role_name") and str(user_role.get("role_name")).lower() in role_names_set:
+#             return user
+#         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient role")
+
+#     return dependency
+"""
+version 2 hai ye, itna kharabh ki poocho maath 
+"""
+# def require_global_roles(role_names: Optional[Iterable[str]] = None, role_ids: Optional[Iterable[int]] = None) -> Callable:
+#     role_names_set = set(n.lower() for n in (role_names or []))
+#     role_ids_set = set(role_ids or [])
+
+#     async def dependency(user: Dict[str, Any] = Depends(get_current_user)):
+#         if not role_names_set and not role_ids_set:
+#             return user
+#         user_role: Optional[Dict[str, Any]] = user.get("global_role")
+#         if user_role is None:
+#             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient role")
+#         if role_ids_set and user_role.get("role_id") in role_ids_set:
+#             return user
+#         if role_names_set and user_role.get("role_name") and str(user_role.get("role_name")).lower() in role_names_set:
+#             return user
+#         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient role")
+
+#     return dependency
+
+
+# # --- DB-backed permission enforcement dependency ---
+# def require_permissions(
+#     permissions: Sequence[str],
+#     scope: Optional[str] = None,
+#     hospital_id_param: str = "hospital_id",
+#     allow_if_superadmin: bool = True,
+# ) -> Callable:
+#     """
+#     Usage:
+#       @router.get(..., dependencies=[Depends(require_permissions(["hospital.profile.view"]))])
+#     - permissions: list/tuple of permission_name(s) to require (all must be present)
+#     - scope: optional filter ('platform'|'tenant'), if provided will only consider permissions in that scope
+#     - hospital_id_param: path/query param name to pull hospital_id (if applicable)
+#     - allow_if_superadmin: bypass check if user's global role_name == 'superadmin'
+#     """
+
+#     required = set(p.lower() for p in permissions)
+
+#     async def dependency(
+#         request: Request,
+#         user: Dict[str, Any] = Depends(get_current_user),
+#         db: AsyncSession = Depends(get_db),
+#     ):
+#         # quick sanity
+#         if not user:
+#             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthenticated")
+
+#         # 1) check superadmin shortcut (if configured)
+#         global_role = user.get("global_role") or {}
+#         global_role_name = (global_role.get("role_name") or "").lower() if global_role else ""
+#         if allow_if_superadmin and global_role_name == "superadmin":
+#             return user
+
+#         # 2) determine hospital_id for tenant-scoped checks
+#         hospital_id = None
+#         if hospital_id_param in request.path_params:
+#             try:
+#                 hospital_id = int(request.path_params[hospital_id_param])
+#             except Exception:
+#                 hospital_id = None
+#         elif hospital_id_param in request.query_params:
+#             try:
+#                 hospital_id = int(request.query_params[hospital_id_param])
+#             except Exception:
+#                 hospital_id = None
+
+#         # 3) collect candidate permissions from DB
+#         found_perms: set[str] = set()
+
+#         # 3a. direct user_permissions (explicit grants)
+#         # user_permissions table stores permission_name and scope and optional hospital_id
+#         try:
+#             up_q = await db.execute(
+#                 select(UserPermissions).where(UserPermissions.user_id == user.get("user_id"))
+#             )
+#             ups = up_q.scalars().all()
+#             for up in ups:
+#                 pname = (up.permission_name or "").lower()
+#                 pm_scope = (up.scope or "").lower()
+#                 # hospital coalesce handled by the DB; but we filter in python:
+#                 if scope and pm_scope != scope.lower():
+#                     continue
+#                 if hospital_id is not None and up.hospital_id is not None and int(up.hospital_id) != int(hospital_id):
+#                     # only add if hospital matches (or if scope is platform where hospital_id is None)
+#                     continue
+#                 found_perms.add(pname)
+#         except Exception:
+#             # fallthrough: don't crash on permission-table read errors; deny by default soon
+#             pass
+
+#         # 3b. global role permissions (role_permission -> permission_master)
+#         try:
+#             gr_id = global_role.get("role_id")
+#             if gr_id:
+#                 rp_q = await db.execute(
+#                     select(PermissionMaster.permission_name)
+#                     .select_from(RolePermission.__table__.join(PermissionMaster.__table__, RolePermission.permission_id == PermissionMaster.permission_id))
+#                     .where(RolePermission.role_id == gr_id)
+#                 )
+#                 for row in rp_q.scalars().all():
+#                     pname = (row or "").lower()
+#                     if scope and scope.lower() != "platform":
+#                         # if caller requested 'tenant' scope specifically, don't include platform perms
+#                         continue
+#                     found_perms.add(pname)
+#         except Exception:
+#             pass
+
+#         # 3c. hospital role permissions (hospital_user_roles -> hospital_role_permission -> permission_master)
+#         try:
+#             # we want hospital roles for this user; some token payloads include hospital roles
+#             # first attempt: check token user payload for hospital role list
+#             token_hospital_roles = user.get("hospital_roles") or []  # expected shape: [{ "hospital_id": X, "hospital_role_id": Y, "role_name": "doctor" }, ...]
+#             hospital_role_pairs: List[Dict[str, Any]] = []
+#             if token_hospital_roles:
+#                 hospital_role_pairs = token_hospital_roles
+#             else:
+#                 # fallback: query DB for hospital_user_roles entries
+#                 hur_q = await db.execute(select(HospitalUserRoles).where(HospitalUserRoles.user_id == user.get("user_id")))
+#                 hospital_role_pairs = [
+#                     {"hospital_id": hur.hospital_id, "hospital_role_id": hur.hospital_role_id}
+#                     for hur in hur_q.scalars().all()
+#                 ]
+
+#             for hr in hospital_role_pairs:
+#                 hr_hospital_id = hr.get("hospital_id")
+#                 hr_role_id = hr.get("hospital_role_id")
+#                 # if a hospital_id was supplied in the request, only consider matching hospital or global perms
+#                 if hospital_id is not None and hr_hospital_id is not None and int(hr_hospital_id) != int(hospital_id):
+#                     continue
+#                 # fetch permissions for this hospital_role
+#                 hrp_q = await db.execute(
+#                     select(PermissionMaster.permission_name)
+#                     .select_from(HospitalRolePermission.__table__.join(PermissionMaster.__table__, HospitalRolePermission.permission_id == PermissionMaster.permission_id))
+#                     .where(HospitalRolePermission.hospital_role_id == hr_role_id)
+#                 )
+#                 for row in hrp_q.scalars().all():
+#                     pname = (row or "").lower()
+#                     if scope and scope.lower() != "tenant":
+#                         # caller asked specifically for platform perms only; skip tenant perms
+#                         continue
+#                     found_perms.add(pname)
+#         except Exception:
+#             pass
+
+#         # 4) final check: required subset present in found_perms
+#         if required.issubset(found_perms):
+#             return user
+
+#         # failed - raise 403
+#         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+
+#     return dependency
