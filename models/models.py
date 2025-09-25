@@ -4,7 +4,7 @@ import decimal
 
 from sqlalchemy import BigInteger, Column, Computed, DECIMAL, Date, DateTime, ForeignKeyConstraint, Index, Integer, JSON, String, Table, Text, text
 from sqlalchemy.dialects.mysql import LONGTEXT, TINYINT
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from database.database import Base
 
 
@@ -45,7 +45,7 @@ class PermissionMaster(Base):
     role_permission: Mapped[list['RolePermission']] = relationship('RolePermission', back_populates='permission')
     hospital_role_permission: Mapped[list['HospitalRolePermission']] = relationship('HospitalRolePermission', back_populates='permission')
     user_permissions: Mapped[list['UserPermissions']] = relationship('UserPermissions', back_populates='permission')
-
+    user_direct_permissions: Mapped[list['UserDirectPermissions']] = relationship('UserDirectPermissions', back_populates='permission')
 
 class RoleMaster(Base):
     __tablename__ = 'role_master'
@@ -241,14 +241,23 @@ class DoctorAvatars(Base):
     doctor: Mapped['Users'] = relationship('Users', back_populates='doctor_avatars')
 
 
-t_doctor_hospitals = Table(
-    'doctor_hospitals', Base.metadata,
-    Column('user_id', Integer, primary_key=True),
-    Column('hospital_id', Integer, primary_key=True),
-    ForeignKeyConstraint(['hospital_id'], ['hospital_master.hospital_id'], ondelete='CASCADE', name='doctor_hospitals_ibfk_2'),
-    ForeignKeyConstraint(['user_id'], ['users.user_id'], ondelete='CASCADE', name='doctor_hospitals_ibfk_1'),
-    Index('idx_dh_hosp', 'hospital_id')
-)
+# t_doctor_hospitals = Table(
+#     'doctor_hospitals', Base.metadata,
+#     Column('user_id', Integer, primary_key=True),
+#     Column('hospital_id', Integer, primary_key=True),
+#     ForeignKeyConstraint(['hospital_id'], ['hospital_master.hospital_id'], ondelete='CASCADE', name='doctor_hospitals_ibfk_2'),
+#     ForeignKeyConstraint(['user_id'], ['users.user_id'], ondelete='CASCADE', name='doctor_hospitals_ibfk_1'),
+#     Index('idx_dh_hosp', 'hospital_id')
+# )
+class DoctorHospital(Base):
+    __tablename__ = "doctor_hospitals"
+    user_id = Column(Integer, ForeignKeyConstraint("users.user_id", ondelete="CASCADE"), primary_key=True)
+    hospital_id = Column(Integer, ForeignKeyConstraint("hospital_master.hospital_id", ondelete="CASCADE"), primary_key=True)
+    role = Column(String(50), nullable=True)          
+    joined_at = Column(DateTime, default=datetime.datetime)
+    user = relationship("User", back_populates="doctor_hospitals")
+    hospital = relationship("Hospital", back_populates="doctor_hospitals")
+
 
 
 class DoctorSpecialties(Base):
@@ -505,3 +514,25 @@ class ConsultationMessages(Base):
     timestamp: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
 
     session: Mapped['ConsultationSessions'] = relationship('ConsultationSessions', back_populates='consultation_messages')
+
+class UserDirectPermissions(Base):
+    __tablename__ = 'user_direct_permissions'
+    __table_args__ = (
+        ForeignKeyConstraint(['permission_id'], ['permission_master.permission_id'], name='user_direct_permissions_ibfk_1'),
+        Index('permission_id', 'permission_id'),
+        Index('uq_udp', 'user_id', 'permission_id', 'hospital_id', 'scope', unique=True)
+    )
+
+    udp_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    permission_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    scope: Mapped[str] = mapped_column(String(50, 'utf8mb4_unicode_ci'), nullable=False)
+    hospital_id: Mapped[Optional[int]] = mapped_column(Integer)
+    granted_by: Mapped[Optional[int]] = mapped_column(Integer)
+    granted_on: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+
+    permission: Mapped['PermissionMaster'] = relationship('PermissionMaster', back_populates='user_direct_permissions') 
+
+
+
+

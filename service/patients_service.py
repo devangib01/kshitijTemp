@@ -1,9 +1,7 @@
 from typing import List, Dict, Any, Optional
-import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
-from sqlalchemy.exc import IntegrityError
-from models import Users, UserDetails, PatientHospitals, Consultation, RoleMaster
+from models.models import Users, UserDetails, PatientHospitals, Consultation, RoleMaster
 from schema.schema import RegisterPatientIn
 from utils.utils import generate_passwd_hash
 from utils.validators import validate_username, validate_email, validate_password, validate_phone
@@ -11,21 +9,15 @@ from centralisedErrorHandling.ErrorHandling import ValidationError, DatabaseErro
 
 
 
-async def create_patient(db: AsyncSession, payload: RegisterPatientIn, created_by_user_id: Optional[int] = None) -> Users:
-    """
-    Create a patient user and an associated UserDetails row.
-    """
-    # ---- Validation using validators.py ----
+async def create_patient(db: AsyncSession, payload: RegisterPatientIn) -> Users:
     try:
         username = validate_username(payload.username)
         email = validate_email(payload.email)
         password = validate_password(payload.password)
         phone = validate_phone(payload.phone, required=False)
     except ValidationError as ve:
-        # validators.py already raises ValidationError from ErrorHandling
         raise ve
 
-    # ---- Check duplicates ----
     q = select(Users).where((Users.email == email) | (Users.username == username))
     try:
         res = await db.execute(q)
@@ -36,7 +28,6 @@ async def create_patient(db: AsyncSession, payload: RegisterPatientIn, created_b
     if existing:
         raise ValidationError("A user with that email or username already exists")
 
-    # ---- Get patient role ----
     try:
         role_q = select(RoleMaster).where(RoleMaster.role_name == "patient")
         role_res = await db.execute(role_q)
@@ -47,7 +38,6 @@ async def create_patient(db: AsyncSession, payload: RegisterPatientIn, created_b
     if not patient_role:
         raise DatabaseError("Patient role not found in system", operation="select", table="role_master")
 
-    # ---- Create user ----
     user = Users(
         username=username,
         email=email,
@@ -79,9 +69,7 @@ async def create_patient(db: AsyncSession, payload: RegisterPatientIn, created_b
         raise DatabaseError("Failed to create patient", operation="insert", table="users", original_error=e)
 
 async def get_patient_profile(db: AsyncSession, user_id: int) -> Optional[UserDetails]:
-    """
-    Return the UserDetails row for given user_id (or None).
-    """
+
     try:
         details = await db.get(UserDetails, int(user_id))
         return details
@@ -90,9 +78,7 @@ async def get_patient_profile(db: AsyncSession, user_id: int) -> Optional[UserDe
 
 
 async def update_patient_profile(db: AsyncSession, user_id: int, update_data: Dict[str, Any]) -> UserDetails:
-    """
-    Update allowed profile fields on user_details.
-    """
+
     try:
         details = await db.get(UserDetails, int(user_id))
     except Exception as e:
@@ -109,7 +95,6 @@ async def update_patient_profile(db: AsyncSession, user_id: int, update_data: Di
             changed = True
 
     if not changed:
-        # nothing to update
         return details
 
     try:
@@ -122,9 +107,7 @@ async def update_patient_profile(db: AsyncSession, user_id: int, update_data: Di
         raise DatabaseError("Failed to update profile", operation="update", table="user_details", original_error=e)
 
 async def list_patient_consultations(db: AsyncSession, user_id: int, limit: int = 50) -> List[Dict[str, Any]]:
-    """
-    Use ORM select to fetch Consultation objects for this patient.
-    """
+
     try:
         q = (
             select(Consultation)
@@ -146,3 +129,4 @@ async def list_patient_consultations(db: AsyncSession, user_id: int, limit: int 
         "status": consultation.status,
         "total_duration": int(consultation.total_duration or 0),
     } for consultation in consultations]
+

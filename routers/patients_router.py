@@ -1,16 +1,23 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
+from fastapi import (
+    APIRouter, 
+    Depends, 
+    HTTPException,
+    status)
 from typing import Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from database.database import get_db
-from dependencies.dependencies import require_permissions, get_current_user
+from dependencies.dependencies import require_permissions
 from schema.schema import (
     RegisterPatientIn, RegisterPatientOut,
     UserDetailsRead, UserDetailsUpdate
 )
 from service.patients_service import (
-    create_patient, get_patient_profile, update_patient_profile, list_patient_consultations
+    create_patient, 
+    get_patient_profile, 
+    update_patient_profile, 
+    list_patient_consultations
 )
-from centralisedErrorHandling.ErrorHandling import ValidationError, DatabaseError, UserNotFoundError, AuthorizationError
+from centralisedErrorHandling.ErrorHandling import ValidationError, DatabaseError, UserNotFoundError
 
 router = APIRouter()
 

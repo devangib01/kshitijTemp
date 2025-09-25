@@ -175,7 +175,7 @@ class HospitalProfileOut(BaseModel):
     updated_at: Optional[str] = None
 
 class HospitalProfileUpdate(BaseModel):
-    hospital_name: Optional[constr(strip_whitespace=True, min_length=1)] = None
+    hospital_name: Optional[str] = None
     hospital_email: Optional[EmailStr] = None
     admin_contact: Optional[str] = None
     address: Optional[str] = None
@@ -184,7 +184,7 @@ class HospitalProfileUpdate(BaseModel):
 # Speciality schemas
 # -------------------------
 class SpecialityBase(BaseModel):
-    name: constr(strip_whitespace=True, min_length=1)
+    name: str
     description: Optional[str] = None
     status: Optional[specialty_status_enum] = Field(default="active")
 
@@ -192,7 +192,7 @@ class SpecialityCreate(SpecialityBase):
     pass
 
 class SpecialityUpdate(BaseModel):
-    name: Optional[constr(strip_whitespace=True, min_length=1)] = None
+    name: Optional[str] = None
     description: Optional[str] = None
     status: Optional[specialty_status_enum] = None
 
@@ -207,7 +207,7 @@ class HospitalDoctorAdd(BaseModel):
     hospital_role_id: Optional[int] = None
 
 class HospitalDoctorUpdate(BaseModel):
-    username: Optional[constr(strip_whitespace=True, min_length=1)] = None
+    username: Optional[str] = None
     email: Optional[EmailStr] = None
     first_name: Optional[str] = None
     last_name: Optional[str] = None
@@ -1031,3 +1031,23 @@ class ConsultationMessagesUpdate(BaseSchema):
     content: Optional[str] = None
 
 
+class BaseRegisterIn(BaseModel):
+    username: str
+    email: EmailStr
+    password: str
+    first_name: str = None
+    last_name: str = None
+    phone: int = None
+    
+
+class RegisterPatientIn(BaseRegisterIn):
+    hospital_id: Optional[int] = Field(default=None, ge=0)
+
+class RegisterDoctorIn(BaseRegisterIn):
+    specialty_ids: Optional[List[int]] = Field(default=None)
+    hospital_ids: Optional[List[int]] = Field(default=None)
+
+class RegisterOut(BaseModel):
+    user_id: int
+    username: str
+    email: EmailStr

@@ -1,14 +1,15 @@
 from fastapi.security import HTTPBearer
 from fastapi import Request, status, Depends, HTTPException
-from typing import Callable, Iterable, Optional, Any, Dict, Sequence, Set
+from typing import Callable, Iterable, Optional, Any, Dict, Sequence, Set, List
 from database.database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, union_all
 from utils.utils import decode_token
 from database.redis import token_in_blocklist
+import json
 import logging
-
-from models import (
+from database.redis import _redis_client
+from models.models import (
     Users,
     RoleMaster,
     RolePermission,
@@ -16,7 +17,10 @@ from models import (
     HospitalUserRoles,
     HospitalRolePermission,
     UserPermissions,
+    HospitalMaster,
+    Specialties
 )
+CACHE_TTL = 120 
 
 logger = logging.getLogger(__name__)
 
@@ -31,8 +35,6 @@ def is_super_admin(user: Dict[str, Any]) -> bool:
         return False
     rname = global_role.get("role_name")
     return isinstance(rname, str) and rname.strip().lower() == "superadmin"
-
-
 
 class TokenBearer(HTTPBearer):
     async def __call__(self, request: Request) -> Dict[str, Any] | None:
@@ -109,39 +111,36 @@ def require_global_roles(role_names: Optional[Iterable[str]] = None, role_ids: O
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient role privileges")
     return dependency
 
-async def get_user_permissions(user_id: int, db: AsyncSession, hospital_id: Optional[int] = None) -> Set[str]:
-    perms = set()
 
-    # Get direct user permissions
-    q = select(UserPermissions).where(UserPermissions.user_id == user_id)
-    res = await db.execute(q)
-    for up in res.scalars().all():
-        if up.permission_name:
-            perms.add(up.permission_name.strip().lower())
+async def get_user_permissions(
+        user_id: int, 
+        db: AsyncSession, 
+        hospital_id: Optional[int] = None) -> Set[str]:
+    cache_chabbhi = f"user:{user_id}:hospital:{hospital_id or 'global'}:perms"  
+
+    cached = await _redis_client.get(cache_chabbhi)
+    if cached:
+        return set(json.loads(cached))
     
-    # Get user's global role permissions
-    user_q = select(Users).where(Users.user_id == user_id)
-    user_res = await db.execute(user_q)
-    user = user_res.scalar_one_or_none()
-    if user and user.global_role_id:
-        q = (
-            select(PermissionMaster.permission_name)
-            .join(RolePermission, RolePermission.permission_id == PermissionMaster.permission_id)
-            .where(RolePermission.role_id == user.global_role_id)
-        )
-        res = await db.execute(q)
-        perms.update(p.strip().lower() for p in res.scalars().all() if p)
-
+    direct_q = (
+        select(UserPermissions.permission_name).where(UserPermissions.user_id == user_id)
+    )
+    global_q = (select(PermissionMaster.permission_name).join(RolePermission, RolePermission.permission_id == PermissionMaster.permission_id)
+        .join(RoleMaster, RoleMaster.role_id == RolePermission.role_id)
+        .where(RoleMaster.role_id == Users.global_role_id))
+    
+    hospital_q = (select(PermissionMaster.permission_name).join(HospitalRolePermission, HospitalRolePermission.permission_id == PermissionMaster.permission_id)
+     .join(HospitalUserRoles, HospitalUserRoles.hospital_role_id == HospitalRolePermission.hospital_role_id)
+     .where(HospitalUserRoles.user_id == user_id))
+    
     if hospital_id:
-        q = (
-            select(PermissionMaster.permission_name)
-            .join(HospitalRolePermission, HospitalRolePermission.permission_id == PermissionMaster.permission_id)
-            .join(HospitalUserRoles, HospitalUserRoles.hospital_role_id == HospitalRolePermission.hospital_role_id)
-            .where(HospitalUserRoles.user_id == user_id, HospitalUserRoles.hospital_id == hospital_id)
-        )
-        res = await db.execute(q)
-        perms.update(p.strip().lower() for p in res.scalars().all() if p)
+        hospital_q = hospital_q.where(HospitalUserRoles.hospital_id == hospital_id)
+    final_q = union_all(direct_q, global_q, hospital_q)
 
+    execution = await db.execute(final_q)
+    perms = set(p.strip().lower() for p in execution.scalars().all() if p)
+
+    await _redis_client.set(cache_chabbhi, json.dumps(list(perms)), ex=CACHE_TTL)
     return perms
 
 def require_permissions(permissions: Sequence[str], scope: Optional[str] = None, hospital_id_param: str = "hospital_id", allow_super_admin: bool = True) -> Callable:
@@ -155,26 +154,110 @@ def require_permissions(permissions: Sequence[str], scope: Optional[str] = None,
         if not user_id:
             raise HTTPException(status_code=401, detail="Invalid user")
 
-        # Extract hospital_id if needed
+
         hospital_id = None
         if hospital_id_param in request.path_params:
             hospital_id = int(request.path_params[hospital_id_param])
+
+        cache_key = f"permcheck:user:{user_id}:hospital:{hospital_id or 'global'}:{','.join(sorted(required))}"
+        cached = await _redis_client.get(cache_key)
+        if cached:
+            result = json.loads(cached)
+            if result["allowed"]:
+                return user
+            raise HTTPException(status_code=403, detail=f"Missing permissions: {sorted(result['missing'])}")
 
         
         found = await get_user_permissions(user_id, db, hospital_id=hospital_id)
 
         
         missing = required - found
+        "cache miss bhai"
         if missing:
+            await _redis_client.set(cache_key, json.dumps({"allowed": False, "missing": list(missing)}), ex=CACHE_TTL)
             raise HTTPException(status_code=403, detail=f"Missing permissions: {sorted(missing)}")
-
+        "cache success bhai"
+        await _redis_client.set(cache_key, json.dumps({"allowed": True}), ex=CACHE_TTL)
+        logger.info(f"Permission check passed for user {user_id}")
         return user
     return dependency
 
+"""
+STALE PERMISSION INVALIDATION
+"""
+async def invalidate_user_permission_from_cache(user_id: int, hospital_id: Optional[int]= None):
+    hospital_key = hospital_id or "global"
+    perms_key = f"user:{user_id}:hospital:{hospital_key}:perms"
+    await _redis_client.delete(perms_key)
+    logger.info(f"Permission cache invalidated for user {user_id} and hospital {hospital_id}")
+    pattern_for_permcheck = f"permcheck:user:{user_id}:hospital:{hospital_key}:*"
+    async for key in _redis_client.scan_iter(match=pattern_for_permcheck):
+        await _redis_client.delete(key)
+
+"""
+bulk wala invalidation agar saarey invalidate hojaye toh 
+"""
+async def invalidate_hospital_role_cache(hospital_role_id: int, hospital_id: int, db: AsyncSession):
+    q = select(HospitalUserRoles.user_id).where(HospitalUserRoles.hospital_role_id == hospital_role_id)
+    res = await db.execute(q)
+    for (user_id,) in res.all():
+        await invalidate_user_permission_from_cache(user_id, hospital_id=hospital_id)
 
 
+"""
+
+ye helper function use karna hai consistency match.
+
+"""
+async def ensure_hospital_exists(hospital_id: int, db: AsyncSession = Depends(get_db))-> int:
+    if not hospital_id or int(hospital_id) <= 0:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Invalid hai id")
+    try:
+        row = await db.get(HospitalMaster, hospital_id)
+        if not row:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Hospital {hospital_id} not found")
+        return int(hospital_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching hospital {hospital_id}: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
+
+async def ensure_specialties_exist(specialty_ids: Iterable[int], db: AsyncSession = Depends(get_db)) -> List[int]:
+    ids = [int(x) for x in specialty_ids if x is not None]
+    if not ids:
+        return []
+    try:
+        q = select(Specialties.specialty_id).where(Specialties.specialty_id.in_(ids))
+        res = await db.execute(q)
+        found = set(res.scalars().all() or [])
+        missing = sorted([i for i in ids if i not in found])
+        if missing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"error": "Missing specialties", "missing_ids": missing}
+            )
+        return list(found)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error checking specialties: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
 
 
+async def ensure_user_exists(user_id: int, db: AsyncSession = Depends(get_db)) -> int:
+    if not user_id or int(user_id) <= 0:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Invalid user id")
+    try:
+        row = await db.get(Users, user_id)
+        if not row:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"User {user_id} not found")
+        return int(user_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching user {user_id}: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
 
 
 
