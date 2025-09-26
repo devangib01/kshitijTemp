@@ -18,7 +18,8 @@ from models.models import (
     HospitalRolePermission,
     UserPermissions,
     HospitalMaster,
-    Specialties
+    Specialties,
+    HospitalRole
 )
 CACHE_TTL = 120 
 
@@ -259,10 +260,30 @@ async def ensure_user_exists(user_id: int, db: AsyncSession = Depends(get_db)) -
         logger.error(f"Error fetching user {user_id}: {str(e)}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
 
+async def ensure_hospital_role_belongs_to_hospital(
+        hospital_id: int,
+        role_id:int,
+        db: AsyncSession = Depends(get_db)
+):
+    q = await db.execute(select(HospitalRole).where(HospitalRole.hospital_role_id == role_id,
+                                                     HospitalRole.hospital_id == hospital_id,
+                                                     HospitalRole.is_active == True)) 
+    hr = q.scalar_one_or_none()
+    if not hr:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Hospital role {role_id} not found in hospital {hospital_id}")
+    return hr
 
 
 
-
+async def ensure_user_belongs_to_hospital(user_id: int, hospital_id:int, db: AsyncSession = Depends(get_db)):
+    q = await db.execute(select(HospitalUserRoles).where(HospitalUserRoles.user_id == user_id,
+                                                         HospitalUserRoles.hospital_id == hospital_id,
+                                                         HospitalUserRoles.is_active == True))
+           
+    hru = q.scalar_one_or_none()
+    if not hru:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"User {user_id} not found in hospital {hospital_id}")
+    return hru 
 
 
 
