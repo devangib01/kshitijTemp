@@ -198,7 +198,26 @@ class SpecialityUpdate(BaseModel):
 
 class SpecialityOut(SpecialityBase):
     specialty_id: int
+class OnboardHospitalAdminIn(BaseModel):
+    hospital_name: str
+    hospital_email: Optional[EmailStr] = None
+    admin_email: EmailStr
+    admin_password: str = Field(..., min_length=8)
+    admin_username: Optional[str] = None
+    admin_first_name: Optional[str] = None
+    admin_last_name: Optional[str] = None
+    admin_phone: Optional[str] = None
+    auto_login: Optional[bool] = True
 
+class OnboardHospitalAdminOut(BaseModel):
+    hospital_id: int
+    hospital_name: str
+    admin_user_id: int
+    admin_username: str
+    admin_email: EmailStr
+    access_token: Optional[str] = None
+    refresh_token: Optional[str] = None
+    expires_in: Optional[int] = None
 # -------------------------
 # Hospital doctor schemas
 # -------------------------
@@ -1051,3 +1070,27 @@ class RegisterOut(BaseModel):
     user_id: int
     username: str
     email: EmailStr
+
+
+
+
+class CreateUserRequest(BaseModel):
+    username: str
+    password: str
+
+
+class Token(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str
+
+
+class GoogleUser(BaseModel):
+    sub: int
+    email: str
+    name: str
+    picture: str
+
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str

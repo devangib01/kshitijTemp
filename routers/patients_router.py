@@ -28,7 +28,7 @@ async def register_patient(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        new_user = await create_patient(db=db, payload=payload, created_by_user_id=None)
+        new_user = await create_patient(db=db, payload=payload)
         return RegisterPatientOut(
             user_id=int(new_user.user_id),
             username=new_user.username,

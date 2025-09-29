@@ -1,4 +1,3 @@
-# main.py
 from fastapi import FastAPI
 from dependencies.middleware import register_middleware
 from fastapi.middleware.cors import CORSMiddleware
@@ -6,18 +5,18 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.requests import Request
 import logging
-from routers import patients_router, auth_router, doctors_router, hospitals_router
+from routers import patients_router, auth_router, hospital_router
 from config.config import Config
 from centralisedErrorHandling.ErrorHandling import UserServiceError
 app = FastAPI(title="AI Avatar Doctor Backend")
 
-# configure logging basic (so middleware logger emits)
+
 logging.basicConfig(level=logging.INFO)
+ 
 
 app.include_router(patients_router.router)
 app.include_router(auth_router.router)
-app.include_router(doctors_router.router)
-app.include_router(hospitals_router.router)
+app.include_router(hospital_router.router)
 # CORS: set your actual origin(s) when deploying
 origins = [
     "http://localhost:8000",

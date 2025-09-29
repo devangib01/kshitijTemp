@@ -241,22 +241,22 @@ class DoctorAvatars(Base):
     doctor: Mapped['Users'] = relationship('Users', back_populates='doctor_avatars')
 
 
-# t_doctor_hospitals = Table(
-#     'doctor_hospitals', Base.metadata,
-#     Column('user_id', Integer, primary_key=True),
-#     Column('hospital_id', Integer, primary_key=True),
-#     ForeignKeyConstraint(['hospital_id'], ['hospital_master.hospital_id'], ondelete='CASCADE', name='doctor_hospitals_ibfk_2'),
-#     ForeignKeyConstraint(['user_id'], ['users.user_id'], ondelete='CASCADE', name='doctor_hospitals_ibfk_1'),
-#     Index('idx_dh_hosp', 'hospital_id')
-# )
-class DoctorHospital(Base):
-    __tablename__ = "doctor_hospitals"
-    user_id = Column(Integer, ForeignKeyConstraint("users.user_id", ondelete="CASCADE"), primary_key=True)
-    hospital_id = Column(Integer, ForeignKeyConstraint("hospital_master.hospital_id", ondelete="CASCADE"), primary_key=True)
-    role = Column(String(50), nullable=True)          
-    joined_at = Column(DateTime, default=datetime.datetime)
-    user = relationship("User", back_populates="doctor_hospitals")
-    hospital = relationship("Hospital", back_populates="doctor_hospitals")
+t_doctor_hospitals = Table(
+    'doctor_hospitals', Base.metadata,
+    Column('user_id', Integer, primary_key=True),
+    Column('hospital_id', Integer, primary_key=True),
+    ForeignKeyConstraint(['hospital_id'], ['hospital_master.hospital_id'], ondelete='CASCADE', name='doctor_hospitals_ibfk_2'),
+    ForeignKeyConstraint(['user_id'], ['users.user_id'], ondelete='CASCADE', name='doctor_hospitals_ibfk_1'),
+    Index('idx_dh_hosp', 'hospital_id')
+)
+# class DoctorHospital(Base):
+#     __tablename__ = "doctor_hospitals"
+#     user_id = Column(Integer, ForeignKeyConstraint("users.user_id", ondelete="CASCADE"), primary_key=True)
+#     hospital_id = Column(Integer, ForeignKeyConstraint("hospital_master.hospital_id", ondelete="CASCADE"), primary_key=True)
+#     role = Column(String(50), nullable=True)          
+#     joined_at = Column(DateTime, default=datetime.datetime)
+#     user = relationship("User", back_populates="doctor_hospitals")
+#     hospital = relationship("Hospital", back_populates="doctor_hospitals")
 
 
 

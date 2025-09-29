@@ -15,7 +15,7 @@ def verify_password(password: str, hashed: str) -> bool:
 
 
 def create_access_token(user_data: dict, expiry: timedelta | None = None, refresh: bool = False) -> str:
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=timezone.utc())
     exp = now + (expiry if expiry is not None else timedelta(seconds=getattr(Config, "ACCESS_TOKEN_EXPIRY_SECONDS", 4000)))
 
     payload = {
